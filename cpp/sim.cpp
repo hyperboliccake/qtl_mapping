@@ -15,7 +15,7 @@ using namespace std;
 vector<int> mate_one_chr(vector<int>& p1, vector<int>& p2, 
 			 default_random_engine& generator,
 			 int first_pos, int last_pos, 
-			 vector<int>& chr, vector<int>& ps)
+			 vector<int>& ps)
 {
   // from mancera et al 2008 nature
   double extra_crossover_prob = 6.1 * (double)(last_pos - first_pos + 1) / pow(10, 6);
@@ -30,10 +30,10 @@ vector<int> mate_one_chr(vector<int>& p1, vector<int>& p2,
       int site = (int)(round(rand() % (last_pos - first_pos + 1))) + first_pos;
       // Returns an iterator pointing to the first element in the
       // range which does not compare less than val.
-      int site_index = lower_bound(snp_list.begin(), snp_list.end(), site) - snp_list.begin();
-      assert(site_index <= snp_list.size());
+      int site_index = lower_bound(ps.begin(), ps.end(), site) - ps.begin();
+      assert(site_index <= ps.size());
       assert(site_index >= 0);
-      if(site_index == snp_list.size())
+      if(site_index == ps.size())
 	site_index -= 1;
       // don't know why this was here:
       //if(site - snp_list[site_index] > snp_list[site_index + 1] - site_index)
@@ -72,25 +72,27 @@ vector<int> mate_one_chr(vector<int>& p1, vector<int>& p2,
 vector<int> mate(vector<int>& p1, vector<int>& p2, 
 		 default_random_engine& generator, 
 		 int first_pos, int last_pos, 
-		 map<int, vector<int> >& snp_list)
+		 vector<int>& chr, vector<int>& ps)
 {
-  map<int, vector<int> >::iterator it = snp_list.begin()
-
-  int start_ind = 0;
-  int end_ind = snp_list.begin()->size();
   vector<int> gamete;
-  while (it != snp_list.end())
-  {
-    vector<int> p1_chr = vector<int>(p1.begin() + start_ind, p1.begin() + end_ind);
-    vector<int> p2_chr = vector<int>(p2.begin() + start_ind, p2.begin() + end_ind);
-      
-    gamete_chr = mate(p1_chr, p2_chr, generator, first_pos, last_pos, it->second);
-    gamete.insert(gamete_chr.begin(), gamete_chr.size());
+  int prev_chr = chr[0];
+  int start_ind = 0;
+  for (int i = 0; i < ps.size(); i++)
+    {
+      if (chr[i] != prev_chr)
+	{
+	  vector<int> p1_chr = vector<int>(p1.begin() + start_ind, p1.begin() + i);
+	  vector<int> p2_chr = vector<int>(p2.begin() + start_ind, p2.begin() + i);
+	  vector<int> ps_chr = vector<int>(ps.begin() + start_ind, ps.begin() + i);
 
-    start_ind = end_ind;
-    end_ind += it->size();
-    it++;
-  }
+	  gamete_chr = mate_one_chr(p1_chr, p2_chr, generator, first_pos, last_pos, ps_chr);
+	  gamete.insert(gamete_chr.begin(), gamete_chr.size());
+
+	  prev_chr = chr[i];
+	  start_ind = i;
+	}
+    }
+
   return gamete;
 }
 
