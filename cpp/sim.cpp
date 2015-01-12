@@ -14,11 +14,12 @@ using namespace std;
 
 vector<int> mate_one_chr(vector<int>& p1, vector<int>& p2, 
 			 default_random_engine& generator,
-			 int first_pos, int last_pos, vector<int>& snp_list)
+			 int first_pos, int last_pos, 
+			 vector<int>& chr, vector<int>& ps)
 {
   // from mancera et al 2008 nature
   double extra_crossover_prob = 6.1 * (double)(last_pos - first_pos + 1) / pow(10, 6);
-OB
+
   poisson_distribution<int> p_dist(extra_crossover_prob);
   int num_crossovers = p_dist(generator);
 
@@ -93,92 +94,104 @@ vector<int> mate(vector<int>& p1, vector<int>& p2,
   return gamete;
 }
 
-vector<int> gen_segregant(vector<vector<int> >& initial_generation, 
-			  default_random_engine& generator,			  
-			  map<int, vector<int> >& snp_list, 
-			  vector<int> first_pos, vector<int> last_pos)
+vector<vector<int> > gen_segregants(vector<vector<int> >& initial_generation, 
+				    default_random_engine& generator,
+				    vector<int>& chr, vector<int>& ps,
+				    vector<int>& first_pos, vector<int>& last_pos,
+				    int num_segregants, int num_per_cross = num_segregants)
 {
-  int num_gens = (int)(log(initial_generation.size())/log(2));
-  // for each generation, have collection of organisms, each of which is a vector
-  vector<vector<vector<int> > > generations;
-  vector<vector<int> > previous_generation = initial_generation;
-  generations.push_back(initial_generation);
-  for(int n = 0; n < num_gens; n++)
+  // check that size of parent generation is a power of two
+  assert(initial_generation.size() & (initial_generation.size() - 1) == 0);
+
+
+  vector<vector<vector<int> > > pools;
+  for(int i = 0; i < initial_generation.size(); i += 2)
     {
-      vector<vector<int> > new_generation;
-      previous_generation = generations.back();
-      random_shuffle(previous_generation.begin(), previous_generation.end());
-      vector<vector<int> >::iterator it = previous_generation.begin();
-      for(int i = 0; i < previous_generation.size(); i += 2)
+      vector<vector<int> > pool;
+      for(int s = 0; s < num_per_cross; s++) 
 	{
-	  vector<int> p1 = *it;
-	  it++;
-	  vector<int> p2 = *it;
-	  vector<int> baby = mate(p1, p2, generator, first_pos, last_pos, snp_list);
-	  it++;
-	  new_generation.push_back(baby);
+	  vector<int> baby = mate(initial_generation[i], initial_generation[i + 1], 
+				  generator, first_pos, last_pos, chr, ps);
+	  pool.push_back(baby);
 	}
-      generations.push_back(new_generation);
+      pools.push_back(pool);
     }
-  return generations.back().back();
-}
 
-vector<vector<int> > gen_segregants(vector<vector<int> >& initial_generation, 
-				    default_random_engine& generator,
-				    vector<int>& chr, vector<int>& ps,
-				    vector<double>& af,
-				    vector<int>& first_pos, vector<int>& last_pos,
-				    int num_segregants, int num_per_cross = 2 * num_segregants)
-{
-  
-}
-
-vector<vector<int> > gen_segregants(vector<vector<int> >& initial_generation, 
-				    default_random_engine& generator,
-				    vector<int>& chr, vector<int>& ps,
-				    vector<double>& af,
-				    vector<int>& first_pos, vector<int>& last_pos,
-				    int num_segregants, int num_per_cross = 2 * num_segregants)
-{
-  vector<vector<int> > segregants(num_segregants, vector<int>());
-  for(int i = 0; i < num_segregants; i++)
+  vector<vector<vector<int> > > new_pools;
+  for (int i = 0; i < pools.size(); i += 2)
     {
-      if(i%100 == 0)
-	cout << "seg " << i << '\n' << flush;
-      segregants[i] = gen_segregant(initial_generation, generator, snp_list, 
-				    first_pos, last_pos);
+      // choose from each of the two pools with replacement; in
+      // reality we would do this twice switching which is a and
+      // alpha, but that doesn't make a difference here
+      vector<vector<int> > pool1 = pools[i];
+      vector<vector<int> > pool2 = pools[i + 1];
+      assert(pool1.size() == num_per_cross);
+      assert(pool2.size() == num_per_cross);
 
+      vector<vector<int> > new_pool;
+      for (int j = 0; j < num_per_cross; j++)
+	{
+	  vector<int> p1 = pool1[rand() % num_per_cross];
+	  vector<int> p2 = pool2[rand() % num_per_cross];
+	  new_pool.push_back(mate(p1, p2, generator, first_pos, last_pos, chr, ps));
+	}
+      new_pools.push_back(new_pool);
     }
-  return segregants;
+
+  vector<vector<int> > final_pool;
+  vector<vector<int> > pool1 = new_pools[0];
+  vector<vector<int> > pool2 = new_pools[1];
+  assert(pool1.size() == num_per_cross);
+  assert(pool2.size() == num_per_cross);
+  for (int j = 0; j < num_segregants; j++)
+    {
+      vector<int> p1 = pool1[rand() % num_per_cross];
+      vector<int> p2 = pool2[rand() % num_per_cross];
+      final_pool.push_back(mate(p1, p2, generator, first_pos, last_pos, chr, ps));
+    }
+
+  return final_pool;
 }
 
-vector<double> sim_phenotypes(vector<vector<int> >& segregants, int qtl1, int qtl2,
-			      double fixed_effect, default_random_engine& generator,
-			      normal_distribution<double>& n_dist_0,
-			      normal_distribution<double>& n_dist_effect)
+vector<double> sim_phenotypes(vector<vector<int> >& segregants, vector<int> qtls,
+			      vector<double> fixed_effects, default_random_engine& generator)
 {
-  
+  // model is that you have an effect only if you have all of the
+  // qtls, no effect otherwise
+  assert(qtls.size() == fixed_effects.size());
+
+  normal_distribution<double> n_dist_0(0, 1);
   vector<double> phenotypes;
 
-  int epi_allele_1;
-  int epi_allele_2;
-  if(((double)rand()) / RAND_MAX > 0.5)
-    epi_allele_1 = 0;
-  else
-    epi_allele_1 = 1;
-  if(((double)rand()) / RAND_MAX > 0.5)
-    epi_allele_2 = 0;
-  else
-    epi_allele_2 = 1;
+  double avg_effect = 0;
+  for (int q = 0; q < qtls.size(); q++)
+    {
+      avg_effect += fixed_effects[q];
+    }
+  avg_effect = avg_effect / qtls.size();
+  normal_distribution<double> n_dist_effect(0, avg_effect);
 
   for(int i = 0; i < segregants.size(); i++)
     {
-      int allele1 = segregants[i][qtl1];
-      int allele2 = segregants[i][qtl2];
-      if(allele1 == epi_allele_1 && allele2 == epi_allele_2)
-	phenotypes.push_back(n_dist_effect(generator));
+      bool all_minor = true;
+      for (int q = 0; q < qtls.size(); q++)
+	{
+	  // minor allele is always 0, major 1
+	  if (segregants[i][q] == 1)
+	    {
+	      all_minor = false;
+	      break;
+	    }
+	}
+
+      if (all_minor)
+	{
+	  phenotypes.push_back(n_dist_effect(generator));
+	}
       else
-	phenotypes.push_back(n_dist_0(generator));
+	{
+	  phenotypes.push_back(n_dist_0(generator));
+	}
     }
   return phenotypes;
 }
@@ -453,8 +466,7 @@ vector<vector<int> > get_parent_gen(string fn, vector<int> chr,
 
 void sim(int num_sims, int num_segregants, string outfile_ext, 
 	 vector<double> h2, 
-	 string parent_file, vector<int> first_pos, vector<int> last_pos,
-	 int num_qtls)
+	 string parent_file, vector<int> first_pos, vector<int> last_pos)
 {
   // print parameters for reference
   cout << num_sims << ", " << num_segregants << ", " << outfile_ext
@@ -463,9 +475,11 @@ void sim(int num_sims, int num_segregants, string outfile_ext,
 
   // read in parent generation genotypes and information about the
   // variant sites
+  int num_qtls = h2.size();
   vector<int> chr;
   vector<int> ps;
   vector<double> af;
+  // minor allele is always 0, major allele 1
   vector<vector<int> > parents = get_parent_gen(parent_file, chr, ps, af);
   int num_snps = ps.size();
   vector<int> unique_chr; // all the unique chromosomes in the data set
@@ -496,7 +510,6 @@ void sim(int num_sims, int num_segregants, string outfile_ext,
   // later based on the allele frequencies of the snvs we choose)
   default_random_engine generator;
   normal_distribution<double> n_dist_0(0, 1);
-  normal_distribution<double> n_dist_effect;
 
   // vectors for storing segregants, their phenotypes, and the qtls
   // and their fixed effects for each simulation
@@ -517,29 +530,60 @@ void sim(int num_sims, int num_segregants, string outfile_ext,
 				  num_segregants, first_pos, last_pos);
 
       // choose qtls (all on different chromosomes)
-      int num_sites_left = num_sites;
+      vector<int> indices_to_choose;
+      for(int i = 0; i < segregents[0].size(); i++)
+	{
+	  indices_to_choose.push_back(i);
+	}
       for(int q = 0; q < num_qtls; q++)
 	{
-	  int index = (int)(round(rand() % num_sites_left));
-
+	  int index = (int)(round(rand() % indices_to_choose.size()));
+	  int qtl = indices_to_choose[index];
+	  qtls.push_back(qtl);
 	  // remove all sites on same chromosome before picking again
+	  int chosen_chr = chr[qtl];
+	  vector<int>::iterator start_it = NULL;
+	  vector<int>::iterator end_it = NULL;
+	  bool found_start = false;
+	  bool found_end = false;
+	  for(vector<int>::iterator it = indices_to_choose.begin(); it != indices_to_choose.end(); it++)
+	    {
+	      if(!found_start && chr[*it] == chosen_chr)
+		{
+		  start_it = it;
+		  found_start = true;
+		}
+	      else if(found_start && chr[*it] != chosen_chr)
+		{
+		  end_it = it;
+		  found_end = true;
+		  break;
+		}
+	    }
+	  if (!found_end)
+	    {
+	      end_it = indices_to_choose.end();
+	    }
+	  indices_to_choose.erase(start_it, end_it);
 	}
       
+      vector<double> qtl_af;
+      for(int i = 0; i < qtls.size(); i++)
+	{
+	  qtl_af.push_back(af[qtls[i]]);
+	}
+      fixed_effects = heritability_to_fixed_effect(h2, qtl_af, num_segregants);
 
-      fixed_effects = heritability_to_fixed_effect(h2, af, num_segregants);
+      phenotypes = sim_phenotypes(segregants, qtls, fixed_effects, generator);
 
-      phenotypes = sim_phenotypes(segregants, qtl1, qtl2, fixed_effect,
-				  generator, n_dist_0, n_dist_effect);
-      
-      int qtl_pred_1 = 0;
-      int qtl_pred_2 = 0;
+      vector<int> pred_qtls;
       double h2_pred;
       vector<vector<double> > LOD_scores;
-      double max_LOD = predict(phenotypes, segregants, qtl_pred_1, qtl_pred_2, h2_pred, LOD_scores);
+      double max_LOD = predict(phenotypes, segregants, pred_qtls, h2_pred, LOD_scores);
 
       // store all the results
-      write_stats(f_summary, f_probs, qtl_pred_1, qtl_pred_2, qtl1, qtl2, max_LOD, h2_pred,
-		  allele_freqs[qtl1], allele_freqs[qtl2], LOD_scores);
+      write_stats(f_summary, f_probs, pred_qtls, qtls,  max_LOD, h2_pred,
+		  qtl_af, LOD_scores);
     }
   f_summary.close();
   f_probs.close();
