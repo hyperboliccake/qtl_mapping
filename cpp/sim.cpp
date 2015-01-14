@@ -24,20 +24,18 @@ vector<int> mate_one_chr(vector<int>& p1, vector<int>& p2,
   int num_crossovers = p_dist(generator);
 
   vector<int> crossovers;
-
+  // add 1 because we're guaranteed one crossover per chromatid pair
   for(int i = 0; i < num_crossovers + 1; i++)
     {
       int site = (int)(round(rand() % (last_pos - first_pos + 1))) + first_pos;
       // Returns an iterator pointing to the first element in the
-      // range which does not compare less than val.
+      // range which does not compare less than val
       int site_index = lower_bound(ps.begin(), ps.end(), site) - ps.begin();
       assert(site_index <= ps.size());
       assert(site_index >= 0);
       if(site_index == ps.size())
 	site_index -= 1;
-      // don't know why this was here:
-      //if(site - snp_list[site_index] > snp_list[site_index + 1] - site_index)
-      //site_index = site_index + 1;
+      // 50% chance of ending up on chromatid pair we choose
       if(((double)rand()) / RAND_MAX < 0.5)
 	crossovers.push_back(site_index);
     }
@@ -47,10 +45,13 @@ vector<int> mate_one_chr(vector<int>& p1, vector<int>& p2,
   // need to tile p1 and p2, alternating based on indices in crossovers
   vector<int>::iterator it1 = p1.begin();
   vector<int>::iterator it2 = p2.begin();
-  bool toggle = true;
+  // toggle for which parent we're currently on
+  bool toggle = true; 
+  // choose which parent we start with
   if(((double)rand()) / RAND_MAX < 0.5)
     toggle = false;
   assert(p1.size() == p2.size());
+  // then alternate between parents
   for(int i = 0; i < p1.size(); i++)
     {
       if(toggle)
@@ -71,12 +72,13 @@ vector<int> mate_one_chr(vector<int>& p1, vector<int>& p2,
 
 vector<int> mate(vector<int>& p1, vector<int>& p2, 
 		 default_random_engine& generator, 
-		 int first_pos, int last_pos, 
+		 vector<int>& first_pos, vector<int>& last_pos, 
 		 vector<int>& chr, vector<int>& ps)
 {
   vector<int> gamete;
   int prev_chr = chr[0];
   int start_ind = 0;
+  int chr_count = 0;
   for (int i = 0; i < ps.size(); i++)
     {
       if (chr[i] != prev_chr)
@@ -85,11 +87,13 @@ vector<int> mate(vector<int>& p1, vector<int>& p2,
 	  vector<int> p2_chr = vector<int>(p2.begin() + start_ind, p2.begin() + i);
 	  vector<int> ps_chr = vector<int>(ps.begin() + start_ind, ps.begin() + i);
 
-	  gamete_chr = mate_one_chr(p1_chr, p2_chr, generator, first_pos, last_pos, ps_chr);
+	  gamete_chr = mate_one_chr(p1_chr, p2_chr, generator, first_pos[chr_count], 
+				    last_pos[chr_count], ps_chr);
 	  gamete.insert(gamete_chr.begin(), gamete_chr.size());
 
 	  prev_chr = chr[i];
 	  start_ind = i;
+	  chr_count++;
 	}
     }
 
@@ -100,12 +104,16 @@ vector<vector<int> > gen_segregants(vector<vector<int> >& initial_generation,
 				    default_random_engine& generator,
 				    vector<int>& chr, vector<int>& ps,
 				    vector<int>& first_pos, vector<int>& last_pos,
-				    int num_segregants, int num_per_cross = num_segregants)
+				    int num_segregants, int num_per_cross)
 {
   // check that size of parent generation is a power of two
   assert(initial_generation.size() & (initial_generation.size() - 1) == 0);
 
+  // this is all hardcoded for cross of 8 strains right now
+  assert(initial_generation.size() == 8);
 
+  // mate pairs in order, generating a pool of num_per_cross offspring
+  // for each pair
   vector<vector<vector<int> > > pools;
   for(int i = 0; i < initial_generation.size(); i += 2)
     {
@@ -119,6 +127,8 @@ vector<vector<int> > gen_segregants(vector<vector<int> >& initial_generation,
       pools.push_back(pool);
     }
 
+  // then mate those pools by randomly selecting one mate from one and
+  // the other from the other
   vector<vector<vector<int> > > new_pools;
   for (int i = 0; i < pools.size(); i += 2)
     {
@@ -140,6 +150,8 @@ vector<vector<int> > gen_segregants(vector<vector<int> >& initial_generation,
       new_pools.push_back(new_pool);
     }
 
+  // then take the two pools from above and mate them to produce
+  // num_segregants offspring
   vector<vector<int> > final_pool;
   vector<vector<int> > pool1 = new_pools[0];
   vector<vector<int> > pool2 = new_pools[1];
@@ -198,8 +210,10 @@ vector<double> sim_phenotypes(vector<vector<int> >& segregants, vector<int> qtls
   return phenotypes;
 }
 
-double predict(vector<double>& phenotypes, vector<vector<int> >& segregants, int& max_LOD_ind_1,
-	       int& max_LOD_ind_2, double& h2_pred, vector<vector<double> >& LOD_scores)
+double predict(vector<double>& phenotypes, vector<vector<int> >& segregants, 
+	       int& max_LOD_ind_1,
+	       int& max_LOD_ind_2, double& h2_pred, 
+	       vector<vector<double> >& LOD_scores)
 {
   int n = phenotypes.size();
   int num_sites = segregants[0].size();

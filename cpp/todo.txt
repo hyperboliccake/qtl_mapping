@@ -1,0 +1,4 @@
+- generate parent file
+  - eight strains selected with diversity.py
+  - only test marker loci (found previously) but qtls can be any locus
+  - so separate file listing marker loci
