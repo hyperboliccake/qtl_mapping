@@ -70,39 +70,31 @@ vector<int> mate_one_chr(vector<int>& p1, vector<int>& p2,
   return gamete;
 }
 
-vector<int> mate(vector<int>& p1, vector<int>& p2, 
+vector<int> mate(vector<vector<int> >& p1, vector<vector<int> >& p2, 
 		 default_random_engine& generator, 
 		 vector<int>& first_pos, vector<int>& last_pos, 
-		 vector<int>& chr, vector<int>& ps)
+		 vector<int>& chr, vector<vector<int> >& ps)
 {
+  assert(p1.size() == p2.size());
+  assert(chr.size() == p1.size());
+  assert(chr.size() == ps.size());
+
   vector<int> gamete;
-  int prev_chr = chr[0];
-  int start_ind = 0;
-  int chr_count = 0;
-  for (int i = 0; i < ps.size(); i++)
+  int num_chr chr.size();
+
+  for (int i = 0; i < num_chr; i++)
     {
-      if (chr[i] != prev_chr)
-	{
-	  vector<int> p1_chr = vector<int>(p1.begin() + start_ind, p1.begin() + i);
-	  vector<int> p2_chr = vector<int>(p2.begin() + start_ind, p2.begin() + i);
-	  vector<int> ps_chr = vector<int>(ps.begin() + start_ind, ps.begin() + i);
-
-	  gamete_chr = mate_one_chr(p1_chr, p2_chr, generator, first_pos[chr_count], 
-				    last_pos[chr_count], ps_chr);
-	  gamete.insert(gamete_chr.begin(), gamete_chr.size());
-
-	  prev_chr = chr[i];
-	  start_ind = i;
-	  chr_count++;
-	}
+      gamete_chr = mate_one_chr(p1[i], p2[i], generator, first_pos[i], 
+				last_pos[i], ps[i]);
+      gamete.insert(gamete_chr.begin(), gamete_chr.size());
     }
-
+  
   return gamete;
 }
 
-vector<vector<int> > gen_segregants(vector<vector<int> >& initial_generation, 
+vector<vector<int> > gen_segregants(vector<vector<vector<int> > >& initial_generation, 
 				    default_random_engine& generator,
-				    vector<int>& chr, vector<int>& ps,
+				    vector<int>& chr, vector<vector<int> >& ps,
 				    vector<int>& first_pos, vector<int>& last_pos,
 				    int num_segregants, int num_per_cross)
 {
@@ -167,7 +159,7 @@ vector<vector<int> > gen_segregants(vector<vector<int> >& initial_generation,
   return final_pool;
 }
 
-vector<double> sim_phenotypes(vector<vector<int> >& segregants, vector<int> qtls,
+vector<double> sim_phenotypes(vector<vector<vector<int> > >& segregants, vector<pair<int, int> > qtls,
 			      vector<double> fixed_effects, default_random_engine& generator)
 {
   // model is that you have an effect only if you have all of the
@@ -190,8 +182,10 @@ vector<double> sim_phenotypes(vector<vector<int> >& segregants, vector<int> qtls
       bool all_minor = true;
       for (int q = 0; q < qtls.size(); q++)
 	{
+	  chr_ind = qtls[q].first;
+	  ps_ind = qtls[q].second;
 	  // minor allele is always 0, major 1
-	  if (segregants[i][q] == 1)
+	  if (segregants[i][chr_ind][ps_ind] == 1)
 	    {
 	      all_minor = false;
 	      break;
@@ -210,14 +204,25 @@ vector<double> sim_phenotypes(vector<vector<int> >& segregants, vector<int> qtls
   return phenotypes;
 }
 
-double predict(vector<double>& phenotypes, vector<vector<int> >& segregants, 
-	       int& max_LOD_ind_1,
-	       int& max_LOD_ind_2, double& h2_pred, 
+double predict(vector<double>& phenotypes, 
+	       vector<vector<vector<int> > >& segregants, 
+	       vector<vector<int> >& ps,
+	       vector<int>& max_LOD_inds,
+	       double& h2_pred, 
 	       vector<vector<double> >& LOD_scores)
 {
+  // simplest strategy is to test every combination of qtls on
+  // different chromosomes (but this will explode very quickly and
+  // might not even be reasonable for two loci)
+
   int n = phenotypes.size();
-  int num_sites = segregants[0].size();
-  for(int i = 0; i < num_sites; i++)
+  int num_chr = segregants[0].size();
+  int num_sites = 0;
+  for(int i = 0; i < num_chr; i++)
+    {
+      num_sites += ps[chr].size();
+    }
+  for (int i = 0; i < num_sites; i++)
     {
       vector<double> row(num_sites);
       for(int j = 0; j < num_sites; j++)
@@ -225,7 +230,6 @@ double predict(vector<double>& phenotypes, vector<vector<int> >& segregants,
       LOD_scores.push_back(row);
     }
   double max_LOD = 0;
-  int skip = 1000;
 
   gsl_vector  * Y = gsl_vector_alloc(n);
   for (int i = 0; i < n; i++)
@@ -234,12 +238,16 @@ double predict(vector<double>& phenotypes, vector<vector<int> >& segregants,
     }
 
   // for no interaction model
-  gsl_matrix * X = gsl_matrix_alloc(n, 3);
+  // intercept + each of 2 individual alleles
+  gsl_matrix * X = gsl_matrix_alloc(n, 3); 
+  // coefficients for above
   gsl_vector * c = gsl_vector_alloc (3);
+  // covariance matrix for coefficients
   gsl_matrix * cov = gsl_matrix_alloc (3, 3);
   double chisq;
 
   // for interaction model
+  // same as above model but with an extra interaction term
   gsl_matrix * Xi = gsl_matrix_alloc(n, 4);
   gsl_vector * ci = gsl_vector_alloc (4);
   gsl_matrix * covi = gsl_matrix_alloc (4, 4);
@@ -247,128 +255,136 @@ double predict(vector<double>& phenotypes, vector<vector<int> >& segregants,
 
   assert(num_sites > 1);
   int success_count = 0;
-  for(int i = 0; i < num_sites; i++)
+  for (int chr1 = 0; chr1 < num_chr; chr1++)
     {
-      if(i % 100 == 0)
-	cout << '*' << i << '\n' << flush;
-      for(int j = i + skip; j < num_sites; j++)
+      for (int chr2 = chr1 + 1; chr2 < num_chr; chr2++)
 	{
-	  // add a row for each segregant, at the same time checking
-	  // whether we see every possible combination of the two - if
-	  // not, we won't bother trying to fit this model
-	  bool seen00 = false;
-	  bool seen01 = false;
-	  bool seen10 = false;
-	  bool seen11 = false;
-
-	  for(int s = 0; s < n; s++)
+	  int num_ps1 = ps[chr1].size();
+	  int num_ps2 = ps[chr2].size();
+	  for (int ps1 = 0; ps1 < num_ps1; ps1++)
 	    {
-	      int allele1 = segregants[s][i];
-	      int allele2 = segregants[s][j];
-
-	      // no interaction
-	      gsl_matrix_set(X, s, 0, 1.0);
-	      gsl_matrix_set(X, s, 1, allele1);
-	      gsl_matrix_set(X, s, 2, allele2);
-
-	      // interaction
-	      gsl_matrix_set(Xi, s, 0, 1.0);
-	      gsl_matrix_set(Xi, s, 1, allele1);
-	      gsl_matrix_set(Xi, s, 2, allele2);
-	      if(allele1 == 0)
+	      for (int ps2 = 0; ps2 < num_ps2; ps2++)
 		{
-		  if(allele2 == 0) // 00
-		    {
-		      gsl_matrix_set(Xi, s, 3, 1);
-		      seen00 = true;
-		    }
-		  else // 01
-		    {
-		      gsl_matrix_set(Xi, s, 3, 0);
-		      seen01 = true;
-		    }
-		}
-	      else
-		{
-		  if(allele2 == 0) // 10
-		    {
-		      gsl_matrix_set(Xi, s, 3, 0);
-		      seen10 = true;
-		    }
-		  else // 11
-		    {
-		      gsl_matrix_set(Xi, s, 3, 0);
-		      seen11 = true;
-		    }
-		}
-	    }
 
-	  if(seen00 && seen01 && seen10 && seen11)
-	    {
-	      success_count++;
+		  // add a row for each segregant, at the same time checking
+		  // whether we see every possible combination of the two - if
+		  // not, we won't bother trying to fit this model
+		  bool seen00 = false;
+		  bool seen01 = false;
+		  bool seen10 = false;
+		  bool seen11 = false;
 
-	      // fit no interaction model
-	      gsl_multifit_linear_workspace * work  = gsl_multifit_linear_alloc (n, 3);
-	      gsl_multifit_linear(X, Y, c, cov, &chisq, work);
-	      gsl_multifit_linear_free(work);
+		  for (int s = 0; s < n; s++)
+		    {
+		      int allele1 = segregants[s][chr1][ps1];
+		      int allele2 = segregants[s][chr2][ps2];
 
-	      // fit interaction model
-	      gsl_multifit_linear_workspace * worki  = gsl_multifit_linear_alloc (n, 4);
-	      gsl_multifit_linear(Xi, Y, ci, covi, &chisqi, worki);
-	      gsl_multifit_linear_free(worki);
+		      // no interaction
+		      gsl_matrix_set(X, s, 0, 1.0);
+		      gsl_matrix_set(X, s, 1, allele1);
+		      gsl_matrix_set(X, s, 2, allele2);
+		      
+		      // interaction
+		      gsl_matrix_set(Xi, s, 0, 1.0);
+		      gsl_matrix_set(Xi, s, 1, allele1);
+		      gsl_matrix_set(Xi, s, 2, allele2);
 
+		      if(allele1 == 0)
+			{
+			  if(allele2 == 0) // 00
+			    {
+			      gsl_matrix_set(Xi, s, 3, 1);
+			      seen00 = true;
+			    }
+			  else // 01
+			    {
+			      gsl_matrix_set(Xi, s, 3, 0);
+			      seen01 = true;
+			    }
+			}
+		      else
+			{
+			  if(allele2 == 0) // 10
+			    {
+			      gsl_matrix_set(Xi, s, 3, 0);
+			      seen10 = true;
+			    }
+			  else // 11
+			    {
+			      gsl_matrix_set(Xi, s, 3, 0);
+			      seen11 = true;
+			    }
+			}
+		    }
+
+		  if(seen00 && seen01 && seen10 && seen11)
+		    {
+		      success_count++;
+		      
+		      // fit no interaction model
+		      gsl_multifit_linear_workspace * work  = gsl_multifit_linear_alloc (n, 3);
+		      gsl_multifit_linear(X, Y, c, cov, &chisq, work);
+		      gsl_multifit_linear_free(work);
+
+		      // fit interaction model
+		      gsl_multifit_linear_workspace * worki  = gsl_multifit_linear_alloc (n, 4);
+		      gsl_multifit_linear(Xi, Y, ci, covi, &chisqi, worki);
+		      gsl_multifit_linear_free(worki);
+		      
 #define C(i) (gsl_vector_get(c,(i)))
 #define Ci(i) (gsl_vector_get(ci,(i)))
-	      {
-		for(int k = 0; k < 4; k++)
-		  if(Ci(k) > 100)
-		    {
-		      cout << "LARGE\n";
-		      cout << "coefficients: " <<  C(0) << ' ' << C(1) << ' ' <<C(2) << ' ' <<C(3) << '\n';
-		      cout << flush;
+		      {
+			for(int k = 0; k < 4; k++)
+			  {
+			    if(Ci(k) > 100)
+			      {
+				cout << "LARGE\n";
+				cout << "coefficients: " <<  C(0) << ' ' << C(1) << ' ' << C(2) << ' ' << C(3) << '\n';
+				cout << flush;
+			      }
+			  }
+
+			// calculate RSS for both models
+			double RSS = 0.0;
+			double fitted_Y;
+			
+			double RSSi = 0.0;
+			double fitted_Yi;
+		
+			for(int k = 0; k < n; k++)
+			  {
+			    fitted_Y = C(0) * gsl_matrix_get(X, k, 0) +
+			      C(1) * gsl_matrix_get(X, k, 1) +
+			      C(2) * gsl_matrix_get(X, k, 2);
+			    RSS += pow(gsl_vector_get(Y, k) - fitted_Y, 2);
+
+			    fitted_Yi = Ci(0) * gsl_matrix_get(Xi, k, 0) +
+			      Ci(1) * gsl_matrix_get(Xi, k, 1) +
+			      Ci(2) * gsl_matrix_get(Xi, k, 2) +
+			      Ci(3) * gsl_matrix_get(Xi, k, 3);
+			    RSSi += pow(gsl_vector_get(Y, k) - fitted_Yi, 2);
+			  }
+			
+			// and finally F and LOD score
+			double p = 3;
+			double pi = 4;
+			double F = ((RSS - RSSi) / (pi - p)) / (RSSi / (n - pi));
+			int df = pi - p; // is this correct?
+			double LOD = n / 2.0 * log((F * df) / (n - df - 1) + 1) / log(10);
+			if(LOD > max_LOD)
+			  {
+			    max_LOD = LOD;
+			    max_LOD_ind_1 = i;
+			    max_LOD_ind_2 = j;
+			  }
+		      }
+		      
 		    }
-
-		// calculate RSS for both models
-		double RSS = 0.0;
-		double fitted_Y;
-
-		double RSSi = 0.0;
-		double fitted_Yi;
-
-		for(int k = 0; k < n; k++)
-		  {
-		    fitted_Y = C(0) * gsl_matrix_get(X, k, 0) +
-		      C(1) * gsl_matrix_get(X, k, 1) +
-		      C(2) * gsl_matrix_get(X, k, 2);
-		    RSS += pow(gsl_vector_get(Y, k) - fitted_Y, 2);
-
-		    fitted_Yi = Ci(0) * gsl_matrix_get(Xi, k, 0) +
-		      Ci(1) * gsl_matrix_get(Xi, k, 1) +
-		      Ci(2) * gsl_matrix_get(Xi, k, 2) +
-		      Ci(3) * gsl_matrix_get(Xi, k, 3);
-		    RSSi += pow(gsl_vector_get(Y, k) - fitted_Yi, 2);
-		  }
-
-		// and finally F and LOD score
-		double p = 3;
-		double pi = 4;
-		double F = ((RSS - RSSi) / (pi - p)) / (RSSi / (n - pi));
-		int df = pi - p; // is this correct?
-		double LOD = n / 2.0 * log((F * df) / (n - df - 1) + 1) / log(10);
-		if(LOD > max_LOD)
-		  {
-		    max_LOD = LOD;
-		    max_LOD_ind_1 = i;
-		    max_LOD_ind_2 = j;
-		  }
-	      }
+		}
 	    }
-	  //else
-	  // {
-	      
-	  //}
 	}
     }
+
   gsl_vector_free(Y);
 
   gsl_matrix_free(X);
@@ -386,24 +402,55 @@ double predict(vector<double>& phenotypes, vector<vector<int> >& segregants,
   return max_LOD;
 }
 
-void write_output_header(ofstream& f_summary)
+void write_output_header(ofstream& f_summary, int num_qtls)
 {
-  f_summary << "pred_qtl1 pred_qtl2 qtl1 qtl2 LOD_score h2_prediction allele_frequency1 allele_frequency2\n";
+  for (int i = 1; i <= num_qtls; i++)
+    {
+      f_summary << "pred_qtl" << i << ' ';
+    }
+  for (int i = 1; i <= num_qtls; i++)
+    {
+      f_summary << "qtl" << i << ' ';
+    }
+
+  f_summary << "LOD_score h2_prediction "
+
+  for (int i = 1; i <= num_qtls; i++)
+    {
+      f_summary << "allele_frequency" << i << ' ';
+    }
+
+  f_summary << '\n';
+
   f_summary.flush();
 }
 
-void write_stats(ofstream& f_summary, ofstream& f_probs, int qtl_pred_1, int qtl_pred_2, 
-		 int qtl1, int qtl2, double max_LOD, double h2_pred,
-		 double allele_freq_1, double allele_freq_2, vector<vector<double> >& LOD_scores)
+void write_stats(ofstream& f_summary, ofstream& f_probs, 
+		 vector<pair<int, int> > qtl_pred, 
+		 vector<pair<int, int> > qtl,
+		 double max_LOD, double h2_pred,
+		 vector<double> af, vector<vector<double> >& LOD_scores)
 {
-  f_summary << qtl_pred_1 << ' ' << qtl_pred_2 << ' ' << qtl1 << ' ' << qtl2 << ' ' 
-	    << max_LOD << ' ' << h2_pred << ' ' << allele_freq_1 << ' ' << allele_freq_2 <<  '\n';
-  //int n = LOD_scores.size();
-  //for(int i = 0; i < n; i++)
-  //  for(int j = 0; j < n; j++)
-  //    f_probs << LOD_scores[i][j] << ',';
+  for (int i = 0; i < qtl_pred.size(); i++)
+    {
+      f_summary << qtl_pred[i] << ' ';
+    }
+
+  for (int i = 0; i < qtl_pred.size(); i++)
+    {
+      f_summary << qtl[i] << ' ';
+    }
+
+  f_summary << max_LOD << ' ' << h2_pred << ' ' 
+
+  for (int i = 0; i < qtl_pred.size(); i++)
+    {
+      f_summary << af[i] << ' ';
+    }
+
+  f_summary << '\n';
+
   f_summary << flush;
-  //f_probs << '\n' << flush;
 }
 
 vector<double> heritability_to_fixed_effect(vector<double> h2, 
@@ -418,66 +465,61 @@ vector<double> heritability_to_fixed_effect(vector<double> h2,
 vector<vector<int> > get_parent_gen(string fn, vector<int> chr, 
 				    vector<int> ps, vector<double>& af)
 {
-  // file format is 
-  // ,chr,chr
-  // ,ps,ps
-  // ,af,af
-  // strain,allele,allele
-  // strain,allele,allele
-
+  // chr,ps,af,strain,strain,strain
+  // chr,ps,af,allele,allele,allele
+  // chr,ps,af,allele,allele,allele
   ifstream f;
   f.open(fn);
   string line;
-
-  // read in chromosomes
   getline(f, line);
-  int index = line.find(',');
-  int new_index;
-
-  while(index < line.length())
+  int index = 0;
+  int col_ind = 0;
+  while (index < line.length())
     {
       new_index = line.find(',', index + 1);
-      chr.push_back(atoi(line.substr(index + 1, new_index - index - 1).c_str()));
-      index = new_index;
+      // could store strain names here if we cared about them...
+      index = new_index;      
+      col_ind++;
     }
+  int num_parents = col_ind - 3;
 
-  // read in positions
-  getline(f, line);
-  index = line.find(',');
-
-  while(index < line.length())
+  int prev_chr = 0;
+  int current_chr = 0;
+  vector<vector<vector<int> > > parents(num_parents, vector<vector<int> >());
+  while(getline(f, line))
     {
+      index = 0;
+      new_index = line.find(',', index + 1);
+      current_chr = atoi(line.substr(index + 1, new_index - index - 1).c_str());
+      chr.push_back(current_chr);
+      index = new_index;
+
+      if (current_chr != prev_chr)
+	{
+	  for (int i = 0; i < num_parents; i++)
+	    {
+	      parents[i].push_back(vector<int>());
+	    }
+	  prev_chr = current_chr;
+	}
+
       new_index = line.find(',', index + 1);
       ps.push_back(atoi(line.substr(index + 1, new_index - index - 1).c_str()));
       index = new_index;
-    }
-    
-  // read in allele frequencies
-  getline(f, line);
-  index = line.find(',');
-  while(index < line.length())
-    {
+
       new_index = line.find(',', index + 1);
       af.push_back(atof(line.substr(index + 1, new_index - index - 1).c_str()));
       index = new_index;
-    }
-  
-  // read in genotypes
-  vector<vector<int> > parent_gen;
-  while(getline(f, line))
-    {
-      index = line.find(',');
-      vector<int> parent;
-      while(index < line.length())
+
+      for (int i = 0; i < num_parents; i++)
 	{
 	  new_index = line.find(',', index + 1);
-	  parent.push_back(atoi(line.substr(index + 1, new_index - index - 1).c_str()));
+	  parents[i][current_chr].push_back(atoi(line.substr(index + 1, new_index - index - 1).c_str()));
 	  index = new_index;
 	}
-      parent_gen.push_back(parent);
     }
 
-  return parent_gen;
+  return parents;
 }
 
 void sim(int num_sims, int num_segregants, string outfile_ext, 
@@ -496,7 +538,7 @@ void sim(int num_sims, int num_segregants, string outfile_ext,
   vector<int> ps;
   vector<double> af;
   // minor allele is always 0, major allele 1
-  vector<vector<int> > parents = get_parent_gen(parent_file, chr, ps, af);
+  vector<vector<vector<int> > > parents = get_parent_gen(parent_file, chr, ps, af);
   int num_snps = ps.size();
   vector<int> unique_chr; // all the unique chromosomes in the data set
   int prev_chr = -1;
