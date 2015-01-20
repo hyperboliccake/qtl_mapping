@@ -1,0 +1,10 @@
+Num sims: 10
+Num segregants: 10000
+Num per cross: 1000
+QTL heritability: 0.05
+QTL heritability: 0.05
+Parent file: /net/gs/vol1/home/aclark4/qtl_mapping/grant/code/diversity/8_strains_binary_test.txt
+Run ID: 800
+simulation 0
+generated segregants
+0

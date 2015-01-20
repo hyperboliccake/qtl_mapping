@@ -1,0 +1,1 @@
+pred_qtl_chr1 pred_qtl_ps1 pred_qtl_chr2 pred_qtl_ps2 qtl_chr1 qtl_ps1 qtl_chr2 qtl_ps2 LOD_score h2_prediction allele_frequency1 allele_frequency2 

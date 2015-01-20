@@ -1,0 +1,1 @@
+g++ -std=c++0x -lgsl -lgslcblas -g sim.cpp sim_main.cpp -o sim_main
