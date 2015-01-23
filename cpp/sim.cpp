@@ -210,12 +210,120 @@ vector<double> sim_phenotypes(vector<vector<vector<int> > >& segregants,
   return phenotypes;
 }
 
-double predict(vector<double>& phenotypes, 
-	       vector<vector<vector<int> > >& segregants, 
-	       vector<vector<int> >& ps,
-	       vector<pair<int, int> >& max_LOD_inds,
-	       double& h2_pred, 
-	       vector<vector<double> >& LOD_scores)
+double predict_one(vector<double>& phenotypes, 
+		   vector<vector<vector<int> > >& segregants, 
+		   vector<vector<int> >& ps,
+		   pair<int, int>& max_LOD_ind,
+		   double& h2_pred, 
+		   vector<double>& LOD_scores)
+{
+  int n = phenotypes.size();
+  int num_chr = segregants[0].size();
+  int num_sites = 0;
+  for(int i = 0; i < num_chr; i++)
+    {
+      num_sites += ps[i].size();
+    }
+  LOD_scores = vector(num_sites, 0);
+  double max_LOD = 0;
+  max_LOD_ind = -1;
+  
+  gsl_vector  * Y = gsl_vector_alloc(n);
+  for (int i = 0; i < n; i++)
+    {
+      gsl_vector_set(Y, i, phenotypes[i]);
+    }
+
+  // association model
+  // intercept + allele
+  gsl_matrix * X = gsl_matrix_alloc(n, 2); 
+  // coefficients for above
+  gsl_vector * c = gsl_vector_alloc (2);
+  // covariance matrix for coefficients
+  gsl_matrix * cov = gsl_matrix_alloc (2, 2);
+  double chisq;
+
+  double fitted_y_null = accumulate(phenotypes.begin(), phenotypes.end(), 0) / n;
+
+  for (int chr_ind = 0; chr_ind < num_chr; chr_ind++)
+    {
+      int num_ps = ps[chr_ind].size();
+      for (int ps_ind = 0; ps_ind < num_ps; ps_ind++)
+	{
+	  // set alleles for all strains
+	  for (int s = 0; s < n; s++)
+	    {
+	      // allele at the locus we're testing
+	      int allele = segregants[s][chr_ind][ps_ind];
+
+	      // no interaction
+	      gsl_matrix_set(X, s, 0, 1.0);
+	      gsl_matrix_set(X, s, 1, allele);
+		      
+	    } 
+
+	  // test for association
+
+	  // fit null model
+	  gsl_multifit_linear_workspace * work  = gsl_multifit_linear_alloc (n, 2);
+	  gsl_multifit_linear(X, Y, c, cov, &chisq, work);
+	  gsl_multifit_linear_free(work);
+
+#define C(i) (gsl_vector_get(c,(i)))
+	  {
+	    // calculate RSS for null and association models
+	    double RSS_null = 0.0;
+
+	    double RSS = 0.0;
+	    double fitted_Y;
+			
+	    for(int k = 0; k < n; k++)
+	      {
+		RSS_null += pow(gsl_vector_get(Y, k) - fitted_Y_null, 2);
+
+		fitted_Y = C(0) * gsl_matrix_get(X, k, 0) +
+		  C(1) * gsl_matrix_get(X, k, 1);
+		RSS += pow(gsl_vector_get(Y, k) - fitted_Y, 2);
+		
+	      }
+	    
+	    // and finally F and LOD score
+	    double p_null = 1;
+	    double p = 2;
+	    double F = ((RSS_null - RSS) / (p_null - p)) / (RSS / (n - p));
+	    int df = p - p_null; // is this correct?
+	    double LOD = n / 2.0 * log((F * df) / (n - df - 1) + 1) / log(10);
+
+	    // check whether this is the strongest
+	    // associaiton we've found so far
+	    if(LOD > max_LOD)
+	      {
+		max_LOD = LOD;
+		max_LOD_ind = pair<int, int>(chr_ind, ps_ind);
+	      }
+	  }
+	  
+	} 
+    }
+
+  gsl_vector_free(Y);
+
+  gsl_matrix_free(X);
+  gsl_matrix_free(cov);
+  gsl_vector_free(c);
+
+  h2_pred = 1 - pow(10, -2.0 / n * max_LOD);
+
+  return max_LOD;
+
+}
+
+double predict_two(vector<double>& phenotypes, 
+		   vector<vector<vector<int> > >& segregants, 
+		   vector<vector<int> >& ps,
+		   vector<pair<int, int> >& max_LOD_inds,
+		   double& h2_pred, 
+		   vector<vector<double> >& LOD_scores)
 {
   // simplest strategy is to test every combination of qtls on
   // different chromosomes (but this will explode very quickly and
@@ -270,7 +378,7 @@ double predict(vector<double>& phenotypes,
 	{
 	  int num_ps1 = ps[chr1].size();
 	  int num_ps2 = ps[chr2].size();
-	  for (int ps1 = 0; ps1 < num_ps1; ps1++)
+	  for (int ps1 = 0; ps1 < 10; ps1++)
 	    {
 	      if (ps1 % 1 == 0)
 		{

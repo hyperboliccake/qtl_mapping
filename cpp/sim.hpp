@@ -33,12 +33,19 @@ std::vector<double> sim_phenotypes(std::vector<std::vector<std::vector<int> > >&
 				   std::vector<double> fixed_effects, 
 				   std::default_random_engine& generator);
 
-double predict(std::vector<double>& phenotypes, 
-	       std::vector<std::vector<std::vector<int> > >& segregants,
-	       std::vector<std::vector<int> >& ps,
-	       std::vector<std::pair<int, int> >& max_LOD_inds,
-	       double& h2_pred,
-	       std::vector<std::vector<double> >& LOD_scores);
+double predict_one(std::vector<double>& phenotypes, 
+		   std::vector<std::vector<std::vector<int> > >& segregants,
+		   std::vector<std::vector<int> >& ps,
+		   std::pair<int, int>& max_LOD_ind,
+		   double& h2_pred,
+		   <std::vector<double>& LOD_scores);
+
+double predict_two(std::vector<double>& phenotypes, 
+		   std::vector<std::vector<std::vector<int> > >& segregants,
+		   std::vector<std::vector<int> >& ps,
+		   std::vector<std::pair<int, int> >& max_LOD_inds,
+		   double& h2_pred,
+		   std::vector<std::vector<double> >& LOD_scores);
 
 void write_outputs_header(std::ofstream& f_summary, int num_qtls);
 
