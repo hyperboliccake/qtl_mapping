@@ -1,0 +1,6 @@
+cpp/out
+*~
+*.pdf
+sim_main
+sim2_main
+*.Rdata
