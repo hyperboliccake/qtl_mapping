@@ -1,5 +1,5 @@
-#ifndef SIM_INCLUDED
-#define SIM_INCLUDED 1
+#ifndef SIM2_INCLUDED
+#define SIM2_INCLUDED 1
 
 #include <stdio.h>
 #include <math.h>

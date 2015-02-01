@@ -315,7 +315,7 @@ double predict_two(vector<double>& phenotypes,
 		   double& h2_pred, 
 		   vector<double>& LOD_scores,
 		   vector<vector<int> >& LOD_scores_loc,
-		   vector<pair<int, int> >& ranges)
+		   vector<pair<int, int> > ranges, vector<int> correct_chrs)
 {
   // simplest strategy is to test every combination of qtls on
   // different chromosomes (but this will explode very quickly and
@@ -323,6 +323,8 @@ double predict_two(vector<double>& phenotypes,
 
   int n = phenotypes.size();
   int num_chr = segregants[0].size();
+
+  /*
   for (int i = 0; i < 2; i++) 
     {
       vector<vector<double> > qtl_scores;
@@ -332,6 +334,7 @@ double predict_two(vector<double>& phenotypes,
 	}
       LOD_scores.push_back(qtl_scores);
     }
+  */
 
   double max_LOD = 0;
   pair<int, int> max_LOD_ind_1(-1, -1);
@@ -360,17 +363,18 @@ double predict_two(vector<double>& phenotypes,
   gsl_matrix * covi = gsl_matrix_alloc (4, 4);
   double chisqi;
 
-  assert(num_sites > 1);
   int success_count = 0;
-  for (int chr1 = 0; chr1 < num_chr; chr1++)
-    {
-      for (int chr2 = chr1 + 1; chr2 < num_chr; chr2++)
-	{
+  //for (int chr1 = 0; chr1 < num_chr; chr1++)
+  //{
+  //  for (int chr2 = chr1 + 1; chr2 < num_chr; chr2++)
+  //	{
 	  //int num_ps1 = ps[chr1].size();
 	  //int num_ps2 = ps[chr2].size();
+  int chr1 = correct_chrs[0];
+  int chr2 = correct_chrs[1];
 	  for (int ps1 = ranges[0].first; ps1 < ranges[0].second; ps1++)
 	    {
-	      if (ps1 % 1 == 0)
+	      if (ps1 % 100 == 0)
 		{
 		  cout << ps1 << '\n' << flush;
 		}
@@ -509,8 +513,8 @@ double predict_two(vector<double>& phenotypes,
 		    } 
 		} // end iterating over ps2
 	    }
-	}
-    }
+	  //	}
+//    }
 
   gsl_vector_free(Y);
 
@@ -663,25 +667,25 @@ void write_stats_2(ofstream& f_summary,
   // chr1
   for (int i = 0; i < LOD_scores.size(); i++)
     {
-      f_LOD << ',' << LOD_scores_loc[i][0];
+      f_LOD << ',' << chr[LOD_scores_loc[i][0]];
     }
   f_LOD << '\n';
   // ps1
   for (int i = 0; i < LOD_scores.size(); i++)
     {
-      f_LOD << ',' << LOD_scores_loc[i][1];
+      f_LOD << ',' << ps[LOD_scores_loc[i][0]][LOD_scores_loc[i][1]];
     }
   f_LOD << '\n';
   // chr2
   for (int i = 0; i < LOD_scores.size(); i++)
     {
-      f_LOD << ',' << LOD_scores_loc[i][2];
+      f_LOD << ',' << chr[LOD_scores_loc[i][2]];
     }
   f_LOD << '\n';
   // ps2
   for (int i = 0; i < LOD_scores.size(); i++)
     {
-      f_LOD << ',' << LOD_scores_loc[i][3];
+      f_LOD << ',' << ps[LOD_scores_loc[i][2]][LOD_scores_loc[i][3]];
     }
   f_LOD << '\n';
   // LOD
@@ -892,13 +896,13 @@ void sim(int num_sims, int num_segregants, int num_per_cross, string outfile_ext
       else if (num_qtls == 2)
 	{
 	  vector<double> LOD_scores_2;
-	  vector<vector<double> > LOD_scores_loc;
+	  vector<vector<int> > LOD_scores_loc;
 	  vector<pair<int, int> > ranges;
-	  int window = 500;
+	  int window = 300;
 	  int qtl1_range_start = max(0, qtls[0].second - window);
-	  int qtl1_range_end = min(ps[qtls[0].first].size(), qtls[0].second + window);
+	  int qtl1_range_end = min(ps[qtls[0].first].size(), (size_t)(qtls[0].second + window));
 	  int qtl2_range_start = max(0, qtls[1].second - window);
-	  int qtl2_range_end = min(ps[qtls[1].first].size(), qtls[1].second + window);
+	  int qtl2_range_end = min(ps[qtls[1].first].size(), (size_t)(qtls[1].second + window));
 	  ranges.push_back(pair<int, int>(qtl1_range_start, qtl1_range_end));
 	  ranges.push_back(pair<int, int>(qtl2_range_start, qtl2_range_end));
 	  vector<int> correct_chrs;

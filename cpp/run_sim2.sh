@@ -1,6 +1,6 @@
 # 
 # Use the bash shell to interpret this job script 
-#$ -S /bin/bash -t 1-10 -l m_mem_free=24G
+#$ -S /bin/bash -t 1-100 -l m_mem_free=12G
 # 
 # Send an e-mail to the address 
 # specified in .sge_request when this job ends. 
@@ -37,4 +37,6 @@ module load gsl/latest
 cd ~/go/src/github.com/hyperboliccake/qtl_mapping/cpp/
 sleep_time=$((10*$SGE_TASK_ID))
 sleep $sleep_time
-./sim_main 10 20000 20000 1 .1 $SGE_TASK_ID
+./sim2_main 1 10000 10000 2 .05 $SGE_TASK_ID
+./sim2_main 1 10000 10000 2 .1 $SGE_TASK_ID
+./sim2_main 1 10000 10000 2 .01 $SGE_TASK_ID
